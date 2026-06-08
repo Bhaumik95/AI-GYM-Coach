@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual Environments 
+gym_env/
+
+# Environment variables
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# ML Models
+ml_models/*.pkl
+ml_models/*.h5
+ml_models/*.pt
+ml_models/*.pth
+ml_models/*.onnx
+
+# Streamlit
+.streamlit/secrets.toml
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
