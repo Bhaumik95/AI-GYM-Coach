@@ -30,7 +30,7 @@ class VideoProcessorClass(VideoProcessorBase):
             min_pose_detection_confidence = 0.7,
             min_pose_presence_confidence = 0.7,
             min_tracking_confidence = 0.7,
-            output_segmentation_marks = False
+            output_segmentation_masks = False
         )
         
         self._landmarker = vision.PoseLandmarker.create_from_options(options)
@@ -72,7 +72,7 @@ class VideoProcessorClass(VideoProcessorBase):
                 cv2.line(
                     img,
                     (int(p1.x * w), int(p1.y * h)),
-                    (int(p2.x * w), int(p2.y * h))
+                    (int(p2.x * w), int(p2.y * h)),
                     (0, 255, 0),
                     8
                 ) 
@@ -104,7 +104,7 @@ class VideoProcessorClass(VideoProcessorBase):
         cv2.putText(
             img,
             "PLEASE FACE THE CAMERA",
-            (30, 50),
+            (30, 90),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             (0, 255, 0),
@@ -219,6 +219,6 @@ class VideoProcessorClass(VideoProcessorBase):
             
                 self.set_latest_metrics(metrics)
         else:
-            self._draw_no_pose_warnings()
+            self._draw_no_pose_warnings(image)
             
         return av.VideoFrame.from_ndarray(image, format="bgr24")    

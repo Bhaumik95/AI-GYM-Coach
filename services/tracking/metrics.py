@@ -1,0 +1,67 @@
+import streamlit as st
+import time
+from services.config.workout_config import METRIC_FIELDS
+from services.persistence.exercise_repository import add_exercise
+
+def sync_metrics_update(context):
+    if not context or not hasattr(context, "state") or not context.state.playing:
+        return
+    
+    processor = getattr(context, "video_processor", None)
+     
+    if not processor:
+        return
+    
+    exercise = st.session_state.get("exercise_type")
+    
+    if not exercise:
+        return
+    
+    processor.set_exercise(exercise)
+
+    latest_metrics = processor.get_latest_metrics()
+    
+    if not latest_metrics:
+        return
+    
+    reps = latest_metrics.get('reps')
+    st.session_state.reps = reps
+    
+    fields = METRIC_FIELDS.get(exercise)
+    
+    if not fields:
+        return
+    
+    for key, default in fields.items():
+        st.session_state[key] = latest_metrics.get(key, default)
+        
+    reps_per_set = st.session_state.get('reps_per_set')
+    target_sets = st.session_state.get('target_sets')
+    
+    if reps_per_set > 0 and target_sets > 0:
+        current_set_reps = reps % reps_per_set # ex: 1 % 10 = 1
+        sets_completed = reps // reps_per_set    # ex: 5 // 10 = 0   
+        workout_completed = sets_completed >= target_sets
+    else:
+        current_set_reps = 0
+        sets_completed = 0   
+        workout_completed = False
+        
+    st.session_state.current_set_reps = current_set_reps
+    st.session_state.sets_completed = sets_completed
+    st.session_state.workout_completed = workout_completed
+    
+    last_saved_sets_completed = st.session_state.get('last_saved_sets_completed', 0)
+    
+    if reps_per_set > 0 and target_sets > 0 and sets_completed > last_saved_sets_completed:
+        recently_completed = sets_completed - last_saved_sets_completed
+        now_ts = time.time()
+        started_at = st.session_state.get("set_cycle_started_at")
+        time_taken = now_ts - started_at
+        
+        user_id = st.session_state.get('user_id',0)
+        
+        add_exercise(user_id, exercise, recently_completed * reps_per_set, recently_completed, time_taken)
+        
+        st.session_state.set_cycle_started_at = now_ts
+        st.session_state.last_saved_sets_completed = sets_completed

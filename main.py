@@ -1,12 +1,17 @@
+import os
+import time
+import pandas as pd
 import streamlit as st
 from services.auth.login_wall import rendered_login_wall
 from services.state.session_defaults import initial_session_defaults
 from services.config.workout_config import EXERCISE_OPTIONS
-import os
 from services.ui.style_loader import load_css, inject_local_font
 from services.persistence.exercise_repository import init_db
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
 from services.vision.exercise_video_processor import VideoProcessorClass
+from services.tracking.metrics import sync_metrics_update
+from services.persistence.exercise_repository import get_user_exercise
+
 
 def main():
     st.set_page_config(
@@ -37,40 +42,49 @@ def main():
             st.subheader('Workout Plan')
             
             if not workout_started:
-                st.selectbox("Exercise", options=EXERCISE_OPTIONS, key='plan_exercise')
+                plan_exercise = st.selectbox("Exercise", options=EXERCISE_OPTIONS, key='plan_exercise')
                 
-                st.number_input("Sets", min_value=0, max_value=50, key="plan_sets", step=1)
+                plan_sets = st.number_input("Sets", min_value=0, max_value=50, key="plan_sets", step=1)
             
-                st.number_input("Reps per Set", min_value=0, max_value=50, key="plan_reps", step=1)
+                plan_reps = st.number_input("Reps per Set", min_value=0, max_value=50, key="plan_reps", step=1)
+                
                 st.markdown("")
                 
                 start_session_button = st.button('Start Session', width="stretch", key="start_session_button")
                 
                 if start_session_button:
-                    st.session_state['workout_started'] = True
+                    st.session_state.exercise_type = plan_exercise
+                    st.session_state.target_sets = int(plan_sets)
+                    st.session_state.reps_per_set = int(plan_reps)
+                    st.session_state.reps = 0
+                    st.session_state.workout_started = True
+                    st.session_state.set_cycle_started_at = time.time()
+                    st.session_state.last_saved_sets_completed = 0
+                    st.session_state.last_notified_sets_completed = 0
+                    st.session_state.last_notified_workout_completed = False    
                     st.rerun()                            
             else:
-                exercise = st.session_state.get('plan_exercise')
-                sets = st.session_state.get('plan_sets')
-                reps = st.session_state.get('plan_reps')
+                exercise = st.session_state.get('exercise_type')
+                sets = st.session_state.get('target_sets')
+                reps = st.session_state.get('reps_per_set')
                 
                 st.info(f"**{exercise}** -- {sets} sets / {reps} reps")
                 
                 end_session_button = st.button("End Session", width='stretch',key='end_session_button')
                 
                 if end_session_button:
-                    st.session_state["workout_started"]= False
+                    st.session_state.workout_started = False
                     st.rerun()        
             
             if workout_started:
                 st.divider()
                 
-                exercise = st.session_state.get("plan_exercise")
+                exercise = st.session_state.get("exercise_type")
                 total_reps = st.session_state.get("reps")
                 current_set_reps = st.session_state.get("current_set_reps")
-                reps_per_set = st.session_state.get("plan_reps")
+                reps_per_set = st.session_state.get("reps_per_set")
                 sets_completed = st.session_state.get("sets_completed")
-                target_sets = st.session_state.get("plan_sets")
+                target_sets = st.session_state.get("target_sets")
                 
                 st.subheader("Progress")
                 
@@ -84,7 +98,7 @@ def main():
                     st.subheader("Squats Metrics")
                     st.metric("Knee Angle", f"{st.session_state.knee_angle}°")
                     st.metric("back Angle", f"{st.session_state.back_angle}°")
-                    st.metric("Depth Status", st.session_state.knee_angle)
+                    st.metric("Depth Status", st.session_state.depth_status)
                     
                 elif exercise == "Push-ups":
                     st.subheader("Push-up Metrics")
@@ -99,7 +113,7 @@ def main():
                     st.metric("Swing Detection", st.session_state.swing_status)
                 
                 elif exercise == "Shoulder Press":
-                    st.subheader("Squats Metrics")
+                    st.subheader("Press Metrics")
                     st.metric("Elbow Angle", f"{st.session_state.elbow_angle}°")
                     st.metric("Arm Extension", st.session_state.extension_status)
                     st.metric("Back Arch", st.session_state.back_arch_status)
@@ -138,18 +152,54 @@ def main():
                 key = "exercise analysis",
                 mode = WebRtcMode.SENDRECV,
                 video_processor_factory = VideoProcessorClass,
-                rtc_configuration = {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                rtc_configuration = {"iceServers": [{"urls":["stun:stun.l.google.com:19302"]}]},
                 media_stream_constraints = {
                     "video":True,
                     "audio":False
                 },
                 async_processing = True
             )
-        st.markdown("### Workout History")    
+            
+            sync_metrics_update(context) 
+            
+            if context.state.playing:
+                time.sleep(0.25)
+                st.rerun()
+                
+        st.markdown("### Workout History") 
+        st.divider()
         
+        user_id = st.session_state.get('user_id',0)
         
-                                                      
-    else:
+        if isinstance(user_id, int):
+            history_rows = get_user_exercise(user_id)
+            arr = [
+                {
+                    "Exercise": row['exercise_name'],
+                    "Reps": row['reps'],
+                    "Sets": row['sets'],
+                    "Time (sec)": row['time'],
+                    "Date": row['created_at'],
+                }
+                for row in history_rows
+            ]
+            
+            df = pd.DataFrame(arr)
+            
+            if not df.empty:
+                df['Date'] = pd.to_datetime(df['Date']).dt.date
+                df_agg = df.groupby(['Exercise','Date']).agg({
+                    "Reps":"sum",
+                    "Sets":"sum",
+                    "Time (sec)":"sum"
+                }).reset_index()
+            
+                df_agg.index +=1
+                
+                st.table(df_agg, border="horizontal")
+            else:
+                st.info("No Workout History")                                             
+    else: 
         return
         
 if __name__=="__main__":
