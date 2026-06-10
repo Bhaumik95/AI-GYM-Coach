@@ -6,6 +6,7 @@ import os
 from services.ui.style_loader import load_css, inject_local_font
 from services.persistence.exercise_repository import init_db
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
+from services.vision.exercise_video_processor import VideoProcessorClass
 
 def main():
     st.set_page_config(
@@ -136,7 +137,7 @@ def main():
             context = webrtc_streamer(
                 key = "exercise analysis",
                 mode = WebRtcMode.SENDRECV,
-                video_processor_factory = None,
+                video_processor_factory = VideoProcessorClass,
                 rtc_configuration = {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
                 media_stream_constraints = {
                     "video":True,
