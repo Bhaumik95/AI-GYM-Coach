@@ -17,11 +17,10 @@ from services.config.workout_config import POSE_CONNECTIONS
 class VideoProcessorClass(VideoProcessorBase):
     def __init__(self):
         self._lock = threading.Lock()
-        self._latest_matrics = None
+        self._latest_metrics = None
         self._exercise_type = "Squats"
         
         model_path = os.path.join(os.getcwd(), "ml_models", "pose_landmarker_full.task")
-        
         base_option = python.BaseOptions(model_asset_path = model_path)
         
         options = vision.PoseLandmarkerOptions(
@@ -35,10 +34,10 @@ class VideoProcessorClass(VideoProcessorBase):
         
         self._landmarker = vision.PoseLandmarker.create_from_options(options)
         
-        self.detectors = {
+        self._detectors = {
             "Squats": SquatDetector(),
             "Push-ups": PushUpDetector(),
-            "Bicep Curls (Dumbbell)": BicepCurlDetector(),
+            "Biceps Curls (Dumbbell)": BicepCurlDetector(),
             "Shoulder Press": ShoulderPressDetector(),
             "Lunges": LungesDetector()  
         }
@@ -47,11 +46,11 @@ class VideoProcessorClass(VideoProcessorBase):
         
     def set_latest_metrics(self, metrics):
         with self._lock:
-            self._latest_matrics = metrics.copy()
+            self._latest_metrics = metrics.copy()
             
     def get_latest_metrics(self):
         with self._lock:
-            return None if self._latest_matrics is None else self._latest_matrics.copy()
+            return None if self._latest_metrics is None else self._latest_metrics.copy()
         
     def set_exercise(self, exercise_type):
         with self._lock:
@@ -62,7 +61,7 @@ class VideoProcessorClass(VideoProcessorBase):
             return self._exercise_type   
         
     def _draw_skeleton(self, img, landmarks):
-        h, w = img.shape[0:2]
+        h, w = img.shape[:2]
         
         for start_idx, end_idx in POSE_CONNECTIONS:
             p1 = landmarks[start_idx]
@@ -117,7 +116,7 @@ class VideoProcessorClass(VideoProcessorBase):
             self._draw_squats_overlays(img, metrics)
         elif ex_type == "Push-ups":
             self._draw_pushup_overlays(img, metrics) 
-        elif ex_type == "Bicep Curls (Dumbbell)":
+        elif ex_type == "Biceps Curls (Dumbbell)":
             self._draw_curl_overlays(img, metrics)
         elif ex_type == "Shoulder Press":
             self._draw_press_overlays(img, metrics)
@@ -125,7 +124,7 @@ class VideoProcessorClass(VideoProcessorBase):
             self._draw_lunge_overlays(img, metrics)
                            
     def _draw_squats_overlays(self, img, metrics):
-        h, _ = img.shape[0:2]
+        h, _ = img.shape[:2]
         
         cv2.putText(
             img,
@@ -138,7 +137,7 @@ class VideoProcessorClass(VideoProcessorBase):
         )
     
     def _draw_pushup_overlays(self, img, metrics):
-        h, _ = img.shape[0:2]
+        h, _ = img.shape[:2]
         
         cv2.putText(
             img,
@@ -151,7 +150,7 @@ class VideoProcessorClass(VideoProcessorBase):
         )          
         
     def _draw_curl_overlays(self, img, metrics):
-        h, _ = img.shape[0:2]
+        h, _ = img.shape[:2]
         
         cv2.putText(
             img,
@@ -164,7 +163,7 @@ class VideoProcessorClass(VideoProcessorBase):
         )        
         
     def _draw_press_overlays(self, img, metrics):
-        h, _ = img.shape[0:2]
+        h, _ = img.shape[:2]
         
         cv2.putText(
             img,
@@ -177,7 +176,7 @@ class VideoProcessorClass(VideoProcessorBase):
         ) 
            
     def _draw_lunge_overlays(self, img, metrics):
-        h, _ = img.shape[0:2]
+        h, _ = img.shape[:2]
         
         cv2.putText(
             img,
@@ -191,7 +190,7 @@ class VideoProcessorClass(VideoProcessorBase):
         
     def recv(self, frame):
         image = np.asarray(
-            cv2.flip(frame.to_ndarray(format="bgr24"),1),
+            cv2.flip(frame.to_ndarray(format="bgr24"), 1),
             dtype=np.uint8
         )                   
             
@@ -210,15 +209,23 @@ class VideoProcessorClass(VideoProcessorBase):
             
             ex_type = self.get_exercise()
             
-            detector = self.detectors.get(ex_type)
+            detector = self._detectors.get(ex_type)
             
             if detector:
-                metrics = detector.process(landmarks)
+                metrics = detector.process(landmarks)   
+                
+                metrics["pose_detector"] = True
 
                 self._draw_overlays(image, metrics, ex_type)
             
                 self.set_latest_metrics(metrics)
         else:
             self._draw_no_pose_warnings(image)
+            
+            with self._lock:
+                if self._latest_metrics is not None:
+                    self._latest_metrics["pose_detected"] = False
+                else:
+                    self._latest_metrics = {"pose_detected": False}    
             
         return av.VideoFrame.from_ndarray(image, format="bgr24")    
